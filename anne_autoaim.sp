@@ -11,8 +11,8 @@ public Plugin myinfo =
 	name = "L4D2 Survivor Auto aim",
 	author = "DingbatFlat, HarryPotter, Mengsk",
 	description = "Improve Survivor",
-	version = "1.11",
-	url = ""
+	version = "1.12",
+	url = "https://github.com/MengskQAQ/L4D2-Plugins/anne_autoaim.sp"
 }
 
 /*
@@ -37,9 +37,10 @@ And the action during incapacitated.
 // ====================================================================================================
 
 Change Log:
-1.10 (26-March-2022)
-    - delete useless code
-    - try to fix the problem because of the lag between client and server
+1.12 (26-March-2022)
+    - delete useless code.
+    - try to fix the problem because of the lag between client and server.
+    - fix the timer lag when plugins disable.
 
 1.00 (09-September-2021)
     - Initial release.
@@ -253,9 +254,6 @@ public void OnPluginStart()
 	HookEvent("witch_harasser_set", Event_WitchRage);
 	
 	g_Velo = FindSendPropInfo("CBasePlayer", "m_vecVelocity[0]");
-
-	// ---------------------------------
-	CreateTimer(0.5, Timer_LagTime, _, TIMER_REPEAT);
 }
 
 public void OnMapStart()
@@ -301,8 +299,6 @@ void input_CI()
 {
 	c_bCI_Enabled = GetConVarBool(sb_fix_ci_enabled);
 	c_fCI_Range = GetConVarInt(sb_fix_ci_range) * 1.0;
-//	c_bCI_MeleeEnabled = GetConVarBool(sb_fix_ci_melee_allow);
-//	c_fCI_MeleeRange = GetConVarInt(sb_fix_ci_melee_range) * 1.0;
 }
 
 void input_SI()
@@ -324,9 +320,6 @@ void input_Tank()
 void input_Bash()
 {
 	c_bBash_Enabled = GetConVarBool(sb_fix_bash_enabled);
-//	c_iBash_HunterChance = GetConVarInt(sb_fix_bash_hunter_chance);
-//	c_fBash_HunterRange = GetConVarInt(sb_fix_bash_hunter_range) * 1.0;
-//	c_iBash_JockeyChance = GetConVarInt(sb_fix_bash_jockey_chance);
 	c_fBash_JockeyRange = GetConVarInt(sb_fix_bash_jockey_range) * 1.0;
 }
 
@@ -346,8 +339,9 @@ void inputConfig()
 	g_bEnabled = GetConVarBool(sb_fix_enabled);
 	
 	c_bPrioritize_OwnerSmoker = GetConVarBool(sb_fix_prioritize_ownersmoker);
-	
 	c_bIncapacitated_Enabled = GetConVarBool(sb_fix_incapacitated_enabled);
+	
+	LagRecord();
 	
 	//Notes: I write it because I want to change spread in autoaim-mode
 	ServerCommand("sm_info_reload");
@@ -359,7 +353,7 @@ void inputConfig()
 
 /* ================================================================================================
 *=
-*=		Round / Start Ready / Select Improved Targets
+*=		Round / Start Ready / Get Client Lag
 *=
 ================================================================================================ */
 
@@ -371,7 +365,27 @@ public Action L4D_OnFirstSurvivorLeftSafeArea(int client)
 	}else{
 		CPrintToChatAll("{blue}[{default}Auto Aim{blue}] {default} Plugin State: {green}Not Running{default}");		
 	}
+	LagRecord();
+	
 	return Plugin_Continue;
+}
+
+void LagRecord()
+{
+	if(g_bEnabled){
+		if(ClientLag_Timer != INVALID_HANDLE)
+		{
+			KillTimer(ClientLag_Timer);
+			ClientLag_Timer = INVALID_HANDLE;
+		}
+		ClientLag_Timer = CreateTimer(1.0, Timer_LagTime, INVALID_HANDLE, TIMER_REPEAT);
+	}else{
+		if(ClientLag_Timer != INVALID_HANDLE)
+		{
+			KillTimer(ClientLag_Timer);
+			ClientLag_Timer = INVALID_HANDLE;
+		}
+	}
 }
 
 public Action Timer_LagTime(Handle Timer)
