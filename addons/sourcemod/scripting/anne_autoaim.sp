@@ -11,8 +11,8 @@ public Plugin myinfo =
 	name = "L4D2 Survivor Auto aim",
 	author = "DingbatFlat, HarryPotter, Mengsk",
 	description = "Improve Survivor",
-	version = "1.12",
-	url = "https://github.com/MengskQAQ/L4D2-Plugins/anne_autoaim.sp"
+	version = "1.2",
+	url = "https://github.com/MengskQAQ/L4D2-Plugins"
 }
 
 /*
@@ -37,6 +37,10 @@ And the action during incapacitated.
 // ====================================================================================================
 
 Change Log:
+1.2  (10-May-2022)
+    - delete useless code.
+    - try to rebuild the code.
+    - add more optional.
 1.12 (26-March-2022)
     - delete useless code.
     - try to fix the problem because of the lag between client and server.
@@ -70,14 +74,17 @@ Change Log:
 // Handle
 // ====================================================================================================
 ConVar sb_fix_enabled			= null;
+ConVar sb_fix_headshot			= null;
+ConVar sb_fix_lagshoot			= null;
+
+ConVar sb_fix_help_enabled		= null;
+ConVar sb_fix_help_range		= null;
 
 ConVar sb_fix_ci_enabled		= null;
 ConVar sb_fix_ci_range			= null;
 
 ConVar sb_fix_si_enabled		= null;
 ConVar sb_fix_si_range			= null;
-ConVar sb_fix_si_ignore_boomer		= null;
-ConVar sb_fix_si_ignore_boomer_range	= null;
 
 ConVar sb_fix_tank_enabled		= null;
 ConVar sb_fix_tank_range		= null;
@@ -94,13 +101,12 @@ ConVar sb_fix_witch_enabled		= null;
 ConVar sb_fix_witch_range		= null;
 ConVar sb_fix_witch_range_incapacitated	= null;
 ConVar sb_fix_witch_range_killed	= null;
-ConVar sb_fix_witch_shotgun_control	= null;
 ConVar sb_fix_witch_shotgun_range_max	= null;
 ConVar sb_fix_witch_shotgun_range_min	= null;
 
 ConVar sb_fix_prioritize_ownersmoker	= null;
 
-ConVar sb_fix_incapacitated_enabled	= null;
+Handle ClientLag_Timer;
 
 // ====================================================================================================
 // SendProp
@@ -111,14 +117,17 @@ int g_Velo;
 // Variables
 // ====================================================================================================
 bool g_bEnabled;
+bool g_bHeadshot;
+bool g_bLagShoot;
+
+bool c_bHelp_Enabled;
+float c_fHelp_Range;
 
 bool c_bCI_Enabled;
 float c_fCI_Range;
 
 bool c_bSI_Enabled;
 float c_fSI_Range;
-bool c_bSI_IgnoreBoomer;
-float c_fSI_IgnoreBoomerRange;
 
 bool c_bTank_Enabled;
 float c_fTank_Range;
@@ -138,8 +147,6 @@ float c_fWitch_Range_Killed;
 
 bool c_bPrioritize_OwnerSmoker;
 
-bool c_bIncapacitated_Enabled;
-
 // ====================================================================================================
 // Int Array
 // ====================================================================================================
@@ -150,10 +157,8 @@ int g_Stock_NextThinkTick[MAXPLAYERS1];
 // ====================================================================================================
 // Bool Array
 // ====================================================================================================
-// bool g_bFixTarget[MAXPLAYERS1];
-
-bool g_bDanger[MAXPLAYERS1] = false;
-
+bool g_bAutoAim[MAXPLAYERS1];
+bool g_bAllowAutoaim[MAXPLAYERS1] = false;
 bool g_bWitchActive = false;
 
 bool g_bShove[MAXPLAYERS1][MAXPLAYERS1];
@@ -161,6 +166,7 @@ bool g_bShove[MAXPLAYERS1][MAXPLAYERS1];
 // Float Array
 // ====================================================================================================
 float lagTime[MAXPLAYERS1];
+float clientLerp[MAXPLAYERS1]; 
 
 /****************************************************************************************************/
 
@@ -184,47 +190,47 @@ public void OnPluginStart()
 	// If the plugin is too heavy, Try disable searching for "Entities" other than Client. (CI, Witch and tank rock)
 	
 	// ---------------------------------
-	sb_fix_enabled				= CreateConVar("sb_fix_enabled", "0", "Enable the plugin. <0: Disable, 1: Enable>", FCVAR_NOTIFY, true, 0.0, true, 1.0);
+	sb_fix_enabled			= CreateConVar("sb_fix_enabled", "0", "Enable the plugin. <0: Disable, 1: Enable>", FCVAR_NOTIFY, true, 0.0, true, 1.0);
+	sb_fix_headshot			= CreateConVar("sb_fix_headshot", "0", "Force damagetype headshot. <0: Disable, 1: Enable>", FCVAR_NOTIFY, true, 0.0, true, 1.0);
+	sb_fix_lagshoot			= CreateConVar("sb_fix_lagshoot", "1", "Enable lag shoot. <0: Disable, 1: Enable>", FCVAR_NOTIFY, true, 0.0, true, 1.0);
 	// ---------------------------------
-	sb_fix_ci_enabled				= CreateConVar("sb_fix_ci_enabled", "1", "Deal with Common Infecteds. <0: Disable, 1: Enable | def: 1>", FCVAR_NOTIFY, true, 0.0, true, 1.0);
-	sb_fix_ci_range				= CreateConVar("sb_fix_ci_range", "500", "Range to shoot/search a Common Infected. <1 ~ 2000 | def: 500>", FCVAR_NOTIFY, true, 1.0, true, 2000.0);
+	sb_fix_help_enabled		= CreateConVar("sb_fix_help_enabled", "1", "Help a pinning survivor. <0: Disable, 1: Enable | def: 1>", FCVAR_NOTIFY, true, 0.0, true, 1.0);
+	sb_fix_help_range		= CreateConVar("sb_fix_help_range", "1200", "Range to shoot/search a pinning survivor. <1 ~ 3000 | def: 1200>", FCVAR_NOTIFY, true, 1.0, true, 3000.0);
 	// ---------------------------------
-	sb_fix_si_enabled				= CreateConVar("sb_fix_si_enabled", "1", "Deal with Special Infecteds. <0: Disable, 1: Enable | def: 1>", FCVAR_NOTIFY, true, 0.0, true, 1.0);
-	sb_fix_si_range				= CreateConVar("sb_fix_si_range", "800", "Range to shoot/search a Special Infected. <1 ~ 3000 | def: 500>", FCVAR_NOTIFY, true, 1.0, true, 3000.0);
-	sb_fix_si_ignore_boomer		= CreateConVar("sb_fix_si_ignore_boomer", "1", "Ignore a Boomer near Survivors (and shove a Boomer). <0: No, 1: Yes | def: 1>", FCVAR_NOTIFY, true, 0.0, true, 1.0);
-	sb_fix_si_ignore_boomer_range	= CreateConVar("sb_fix_si_ignore_boomer_range", "200", "Range to ignore a Boomer. <1 ~ 900 | def: 200>", FCVAR_NOTIFY, true, 1.0, true, 500.0);
+	sb_fix_ci_enabled		= CreateConVar("sb_fix_ci_enabled", "1", "Deal with Common Infecteds. <0: Disable, 1: Enable | def: 1>", FCVAR_NOTIFY, true, 0.0, true, 1.0);
+	sb_fix_ci_range			= CreateConVar("sb_fix_ci_range", "500", "Range to shoot/search a Common Infected. <1 ~ 2000 | def: 500>", FCVAR_NOTIFY, true, 1.0, true, 2000.0);
 	// ---------------------------------
-	sb_fix_tank_enabled			= CreateConVar("sb_fix_tank_enabled", "1", "Deal with Tanks. <0: Disable, 1: Enable | def: 1>", FCVAR_NOTIFY, true, 0.0, true, 1.0);
-	sb_fix_tank_range				= CreateConVar("sb_fix_tank_range", "1200", "Range to shoot/search a Tank. <1 ~ 3000 | def: 1200>", FCVAR_NOTIFY, true, 1.0, true, 3000.0);
+	sb_fix_si_enabled		= CreateConVar("sb_fix_si_enabled", "1", "Deal with Special Infecteds. <0: Disable, 1: Enable | def: 1>", FCVAR_NOTIFY, true, 0.0, true, 1.0);
+	sb_fix_si_range			= CreateConVar("sb_fix_si_range", "800", "Range to shoot/search a Special Infected. <1 ~ 3000 | def: 500>", FCVAR_NOTIFY, true, 1.0, true, 3000.0);
 	// ---------------------------------
-	sb_fix_si_tank_priority_type		= CreateConVar("sb_fix_si_tank_priority_type", "0", "When a Special Infected and a Tank is together within the specified range, which to prioritize. <0: Nearest, 1: Special Infected, 2: Tank | def: 0>", FCVAR_NOTIFY, true, 0.0, true, 2.0);
+	sb_fix_tank_enabled		= CreateConVar("sb_fix_tank_enabled", "1", "Deal with Tanks. <0: Disable, 1: Enable | def: 1>", FCVAR_NOTIFY, true, 0.0, true, 1.0);
+	sb_fix_tank_range		= CreateConVar("sb_fix_tank_range", "1200", "Range to shoot/search a Tank. <1 ~ 3000 | def: 1200>", FCVAR_NOTIFY, true, 1.0, true, 3000.0);
 	// ---------------------------------
-	sb_fix_bash_enabled			= CreateConVar("sb_fix_bash_enabled", "1", "Bash a flying Hunter or Jockey. <0: Disable, 1: Enable | def: 1>", FCVAR_NOTIFY, true, 0.0, true, 1.0);
-	sb_fix_bash_jockey_range		= CreateConVar("sb_fix_bash_jockey_range", "125", "Range to bash/search a flying Jockey. <1 ~ 500 | def: 125>", FCVAR_NOTIFY, true, 1.0, true, 500.0);
+	sb_fix_si_tank_priority_type	= CreateConVar("sb_fix_si_tank_priority_type", "0", "When a Special Infected and a Tank is together within the specified range, which to prioritize. <0: Nearest, 1: Special Infected, 2: Tank | def: 0>", FCVAR_NOTIFY, true, 0.0, true, 2.0);
 	// ---------------------------------
-	sb_fix_rock_enabled			= CreateConVar("sb_fix_rock_enabled", "1", "Shoot a tank rock. <0: Disable, 1: Enable | def: 1>", FCVAR_NOTIFY, true, 0.0, true, 1.0);
-	sb_fix_rock_range				= CreateConVar("sb_fix_rock_range", "700", "Range to shoot/search a tank rock. <1 ~ 2000 | def: 700>", FCVAR_NOTIFY, true, 1.0, true, 2000.0);
+	sb_fix_bash_enabled		= CreateConVar("sb_fix_bash_enabled", "1", "Bash a flying Hunter or Jockey. <0: Disable, 1: Enable | def: 1>", FCVAR_NOTIFY, true, 0.0, true, 1.0);
+	sb_fix_bash_jockey_range	= CreateConVar("sb_fix_bash_jockey_range", "125", "Range to bash/search a flying Jockey. <1 ~ 500 | def: 125>", FCVAR_NOTIFY, true, 1.0, true, 500.0);
 	// ---------------------------------
-	sb_fix_witch_enabled			= CreateConVar("sb_fix_witch_enabled", "1", "Shoot a rage Witch. <0: Disable, 1: Enable | def: 1>", FCVAR_NOTIFY, true, 0.0, true, 1.0);
-	sb_fix_witch_range				= CreateConVar("sb_fix_witch_range", "1500", "Range to shoot/search a rage Witch. <1 ~ 2000 | def: 1500>", FCVAR_NOTIFY, true, 1.0, true, 2000.0);
-	sb_fix_witch_range_incapacitated	= CreateConVar("sb_fix_witch_range_incapacitated", "1000", "Range to shoot/search a Witch that incapacitated a survivor. <0 ~ 2000 | def: 1000>", FCVAR_NOTIFY, true, 0.0, true, 2000.0);
-	sb_fix_witch_range_killed		= CreateConVar("sb_fix_witch_range_killed", "0", "Range to shoot/search a Witch that killed a survivor. <0 ~ 2000 | def: 0>", FCVAR_NOTIFY, true, 0.0, true, 2000.0);
-	sb_fix_witch_shotgun_control	= CreateConVar("sb_fix_witch_shotgun_control", "1", "[Witch] If have the shotgun, controls the attack timing. <0: Disable, 1: Enable | def: 1>", FCVAR_NOTIFY, true, 0.0, true, 1.0);
+	sb_fix_rock_enabled		= CreateConVar("sb_fix_rock_enabled", "1", "Shoot a tank rock. <0: Disable, 1: Enable | def: 1>", FCVAR_NOTIFY, true, 0.0, true, 1.0);
+	sb_fix_rock_range		= CreateConVar("sb_fix_rock_range", "700", "Range to shoot/search a tank rock. <1 ~ 2000 | def: 700>", FCVAR_NOTIFY, true, 1.0, true, 2000.0);
+	// ---------------------------------
+	sb_fix_witch_enabled		= CreateConVar("sb_fix_witch_enabled", "1", "Shoot a rage Witch. <0: Disable, 1: Enable | def: 1>", FCVAR_NOTIFY, true, 0.0, true, 1.0);
+	sb_fix_witch_range		= CreateConVar("sb_fix_witch_range", "1500", "Range to shoot/search a rage Witch. <1 ~ 2000 | def: 1500>", FCVAR_NOTIFY, true, 1.0, true, 2000.0);
+	sb_fix_witch_range_incapacitated= CreateConVar("sb_fix_witch_range_incapacitated", "1000", "Range to shoot/search a Witch that incapacitated a survivor. <0 ~ 2000 | def: 1000>", FCVAR_NOTIFY, true, 0.0, true, 2000.0);
+	sb_fix_witch_range_killed	= CreateConVar("sb_fix_witch_range_killed", "0", "Range to shoot/search a Witch that killed a survivor. <0 ~ 2000 | def: 0>", FCVAR_NOTIFY, true, 0.0, true, 2000.0);
 	sb_fix_witch_shotgun_range_max	= CreateConVar("sb_fix_witch_shotgun_range_max", "300", "If a Witch is within distance of the values, stop the attack. <1 ~ 1000 | def: 300>", FCVAR_NOTIFY, true, 1.0, true, 1000.0);
 	sb_fix_witch_shotgun_range_min	= CreateConVar("sb_fix_witch_shotgun_range_min", "70", "If a Witch is at distance of the values or more, stop the attack. <1 ~ 500 | def: 70>", FCVAR_NOTIFY, true, 1.0, true, 500.0);
 	// ---------------------------------
 	sb_fix_prioritize_ownersmoker	= CreateConVar("sb_fix_prioritize_ownersmoker", "1", "Priority given to dealt a Smoker that is try to pinning self. <0: No, 1: Yes | def: 1>", FCVAR_NOTIFY, true, 0.0, true, 1.0);
-	// ---------------------------------
-	sb_fix_incapacitated_enabled		= CreateConVar("sb_fix_incapacitated_enabled", "1", "Enable Incapacitated Cmd. <0: Disable, 1: Enable | def: 1>", FCVAR_NOTIFY, true, 0.0, true, 1.0);
 
+	sb_fix_help_enabled.AddChangeHook(SBHelp_ChangeConvar);
+	sb_fix_help_range.AddChangeHook(SBHelp_ChangeConvar);
 	// ---------------------------------
 	sb_fix_ci_enabled.AddChangeHook(SBCI_ChangeConvar);
 	sb_fix_ci_range.AddChangeHook(SBCI_ChangeConvar);
 	// ---------------------------------
 	sb_fix_si_enabled.AddChangeHook(SBSI_ChangeConvar);
 	sb_fix_si_range.AddChangeHook(SBSI_ChangeConvar);
-	sb_fix_si_ignore_boomer.AddChangeHook(SBSI_ChangeConvar);
-	sb_fix_si_ignore_boomer_range.AddChangeHook(SBSI_ChangeConvar);
 	// ---------------------------------
 	sb_fix_tank_enabled.AddChangeHook(SBTank_ChangeConvar);
 	sb_fix_tank_range.AddChangeHook(SBTank_ChangeConvar);
@@ -240,24 +246,28 @@ public void OnPluginStart()
 	sb_fix_witch_range.AddChangeHook(SBEnt_ChangeConvar);
 	sb_fix_witch_range_incapacitated.AddChangeHook(SBEnt_ChangeConvar);
 	sb_fix_witch_range_killed.AddChangeHook(SBEnt_ChangeConvar);
-	sb_fix_witch_shotgun_control.AddChangeHook(SBEnt_ChangeConvar);
 	sb_fix_witch_shotgun_range_max.AddChangeHook(SBEnt_ChangeConvar);
 	sb_fix_witch_shotgun_range_min.AddChangeHook(SBEnt_ChangeConvar);
 	// ---------------------------------
 	sb_fix_enabled.AddChangeHook(SBConfigChangeConvar);
 	sb_fix_prioritize_ownersmoker.AddChangeHook(SBConfigChangeConvar);
-	sb_fix_incapacitated_enabled.AddChangeHook(SBConfigChangeConvar);
+	sb_fix_headshot.AddChangeHook(SBConfigChangeConvar);
+	sb_fix_lagshoot.AddChangeHook(SBConfigChangeConvar);
 	
 	HookEvent("player_incapacitated", Event_PlayerIncapacitated); // Witch Event
 	HookEvent("player_death", Event_PlayerDeath); // Witch Event
 	
 	HookEvent("witch_harasser_set", Event_WitchRage);
+	HookEvent("player_hurt", Event_HeadShotChange, EventHookMode_Pre);
 	
 	g_Velo = FindSendPropInfo("CBasePlayer", "m_vecVelocity[0]");
+	
+	RegConsoleCmd("sm_autoaim", cmdAutoaim, "allow client to enable autoaim");
 }
 
 public void OnMapStart()
 {
+	input_Help();
 	input_CI();
 	input_SI();
 	input_Tank();
@@ -268,6 +278,7 @@ public void OnMapStart()
 
 public void OnAllPluginsLoaded()
 {
+	input_Help();
 	input_CI();
 	input_SI();
 	input_Tank();
@@ -276,23 +287,18 @@ public void OnAllPluginsLoaded()
 	inputConfig();
 }
 
-public void SBCI_ChangeConvar(Handle convar, const char[] oldValue, const char[] newValue){
-	input_CI(); 
-}
-public void SBSI_ChangeConvar(Handle convar, const char[] oldValue, const char[] newValue){
-	input_SI(); 
-}
-public void SBTank_ChangeConvar(Handle convar, const char[] oldValue, const char[] newValue){ 
-	input_Tank(); 
-}
-public void SBBash_ChangeConvar(Handle convar, const char[] oldValue, const char[] newValue){
-	input_Bash(); 
-}
-public void SBEnt_ChangeConvar(Handle convar, const char[] oldValue, const char[] newValue){
-	input_Entity(); 
-}
-public void SBConfigChangeConvar(Handle convar, const char[] oldValue, const char[] newValue) { 
-	inputConfig();
+public void SBHelp_ChangeConvar(Handle convar, const char[] oldValue, const char[] newValue){ 	input_Help(); }
+public void SBCI_ChangeConvar(Handle convar, const char[] oldValue, const char[] newValue){	input_CI(); }
+public void SBSI_ChangeConvar(Handle convar, const char[] oldValue, const char[] newValue){	input_SI(); }
+public void SBTank_ChangeConvar(Handle convar, const char[] oldValue, const char[] newValue){ 	input_Tank(); }
+public void SBBash_ChangeConvar(Handle convar, const char[] oldValue, const char[] newValue){	input_Bash(); }
+public void SBEnt_ChangeConvar(Handle convar, const char[] oldValue, const char[] newValue){	input_Entity();}
+public void SBConfigChangeConvar(Handle convar, const char[] oldValue, const char[] newValue){	inputConfig();}
+
+void input_Help()
+{
+	c_bHelp_Enabled = GetConVarBool(sb_fix_help_enabled);
+	c_fHelp_Range = GetConVarInt(sb_fix_help_range) * 1.0;
 }
 
 void input_CI()
@@ -305,8 +311,6 @@ void input_SI()
 {
 	c_bSI_Enabled = GetConVarBool(sb_fix_si_enabled);
 	c_fSI_Range = GetConVarInt(sb_fix_si_range) * 1.0;
-	c_bSI_IgnoreBoomer = GetConVarBool(sb_fix_si_ignore_boomer);
-	c_fSI_IgnoreBoomerRange = GetConVarInt(sb_fix_si_ignore_boomer_range) * 1.0;
 }
 
 void input_Tank()
@@ -337,13 +341,14 @@ void input_Entity()
 void inputConfig()
 {
 	g_bEnabled = GetConVarBool(sb_fix_enabled);
+	g_bHeadshot = GetConVarBool(sb_fix_headshot);
+	g_bLagShoot = GetConVarBool(sb_fix_lagshoot);
 	
 	c_bPrioritize_OwnerSmoker = GetConVarBool(sb_fix_prioritize_ownersmoker);
-	c_bIncapacitated_Enabled = GetConVarBool(sb_fix_incapacitated_enabled);
 	
 	LagRecord();
 	
-	//Notes: I write it because I want to change spread in autoaim-mode
+	//Notes: I write it because I want to change spread in autoaim-mode, and that command is connect to another plugin.
 	ServerCommand("sm_info_reload");
 }
 
@@ -359,15 +364,21 @@ void inputConfig()
 
 public Action L4D_OnFirstSurvivorLeftSafeArea(int client)
 {	
-	if(g_bEnabled)
-	{
-		CPrintToChatAll("{blue}[{default}Auto Aim{blue}] {default} Plugin State: {olive}Running{default}");
-	}else{
-		CPrintToChatAll("{blue}[{default}Auto Aim{blue}] {default} Plugin State: {green}Not Running{default}");		
+	if(g_bEnabled){
+		CPrintToChatAll("{blue}[{default}Auto Aim{blue}]{default} Plugin State:{olive} Running{default}");
+		CPrintToChatAll("{blue}[{default}Auto Aim{blue}]{default} Disable Weapon:{olive} Shotgun{default}");
 	}
 	LagRecord();
+	LerpRecord();
 	
 	return Plugin_Continue;
+}
+
+void Anounnce(int client){
+	if(g_bEnabled && !isNotSurvivorBot(client)){
+		CPrintToChat(client, "{blue}[{default}Auto Aim{blue}]{default} Plugin State:{olive} Running{default}");
+		CPrintToChat(client, "{blue}[{default}Auto Aim{blue}]{default} Disable Weapon:{olive} Shotgun{default}");
+	}
 }
 
 void LagRecord()
@@ -388,16 +399,136 @@ void LagRecord()
 	}
 }
 
+void LerpRecord()
+{
+	for (int client = 1; client <= MaxClients; client++) {	
+		if(isNotSurvivorBot(client) && IsPlayerAlive(client)){
+			CreateTimer(0.1, Process, client, TIMER_FLAG_NO_MAPCHANGE);
+		}
+	}
+}
+
 public Action Timer_LagTime(Handle Timer)
 {
 	for (int client = 1; client <= MaxClients; client++) {	
 		if(isNotSurvivorBot(client) && IsPlayerAlive(client)){
-			char buffer[100];
-			GetClientInfo(client, "cl_interp", buffer, 100);
-			float clientLerp = Clamp(StringToFloat(buffer), 0.0, 0.5);
-			lagTime[client] = !IsFakeClient(client) ? GetClientLatency(client, NetFlow_Both) + clientLerp : 0.0;
+			lagTime[client] = GetClientLatency(client, NetFlow_Both) + clientLerp[client];
 		}
 	}
+	return Plugin_Continue;
+}
+
+public void OnClientSettingsChanged(int client)
+{
+	if (IsValidEntity(client) && !IsFakeClient(client)) {
+		ProcessPlayerLerp(client);
+	}
+}
+
+public Action Process(Handle Timer, int client)
+{
+	ProcessPlayerLerp(client);
+	return Plugin_Stop;
+}
+
+void ProcessPlayerLerp(int client)
+{
+	char buffer[100];
+	GetClientInfo(client, "cl_interp", buffer, 100);
+	clientLerp[client] = Clamp(StringToFloat(buffer), 0.0, 0.5);
+}
+
+/* ================================================================================================
+*=
+*=		Client Command
+*=
+================================================================================================ */
+
+public Action cmdAutoaim(int client, int args)
+{
+	if (!client)	 return Plugin_Handled;
+	if (!GetConVarBool(FindConVar("sb_fix_enabled")))
+		return Plugin_Handled;
+
+	if (!g_bAutoAim[client]){ 
+		CPrintToChat(client, "{blue}[{default}Auto Aim{blue}]{default} Your State: {olive}On{default}");
+	}else{
+		CPrintToChat(client, "{blue}[{default}Auto Aim{blue}]{default} Your State: {olive}Off{default}");
+	}
+	g_bAutoAim[client] = !g_bAutoAim[client];
+	return Plugin_Handled;
+}
+
+/* ================================================================================================
+*=
+*=		Force Headshot
+*=
+================================================================================================ */
+
+public void OnClientPutInServer(int client)
+{
+	SDKHook(client, SDKHook_TraceAttack, TraceAttack);
+	SDKHook(client, SDKHook_WeaponSwitch, WeaponSwitch);
+	Anounnce(client);
+}
+
+public void OnClientDisconnect(int client)
+{
+	SDKUnhook(client, SDKHook_TraceAttack, TraceAttack);
+	SDKUnhook(client, SDKHook_WeaponSwitch, WeaponSwitch);
+}
+
+public Action TraceAttack(int victim,int &attacker,int &inflictor, float &damage,int &damagetype,int &ammotype,int hitbox,int hitgroup)
+{
+	if(!g_bEnabled || !g_bHeadshot)		return Plugin_Continue;
+	if(!g_bAutoAim[attacker])		return Plugin_Continue;
+	if(!g_bAllowAutoaim[attacker])	return Plugin_Continue;
+	if(isSurvivor(victim))	return Plugin_Continue;
+	if(GetEntProp(victim, Prop_Send, "m_zombieClass") == ZC_TANK)		return Plugin_Continue;
+	
+	if(g_bHeadshot && hitgroup != 1)
+	{
+		float newDamage = damage * 4;
+		hitgroup = 1;
+		damage = newDamage;
+		return Plugin_Changed;
+	}
+	return Plugin_Continue;
+}
+
+public Action Event_HeadShotChange(Event event, const char[] name, bool dontBroadcast)
+{	
+	if(!g_bEnabled || !g_bHeadshot)		return Plugin_Continue;
+	int attacker = GetClientOfUserId(GetEventInt(event, "attacker"));
+	int userid = GetClientOfUserId(GetEventInt(event, "userid"));
+	if(!g_bAutoAim[attacker])		return Plugin_Continue;
+	if(isSurvivor(userid))	return Plugin_Continue;
+	if(g_bAllowAutoaim[attacker]){
+		event.SetBool("hitgroup", true);
+
+	}
+	return Plugin_Continue;
+}
+
+public Action WeaponSwitch(int client, int weapon)
+{
+	if (!g_bEnabled || !isSurvivor(client)) return Plugin_Continue;
+	
+	char classname[32];
+	int slot0 = GetPlayerWeaponSlot(client, 0);
+	if (slot0 > -1) {			
+		GetEntityClassname(slot0, classname, sizeof(classname));
+	}
+	
+	if (isHaveItem(classname, "weapon_shotgun_chrome")
+		|| isHaveItem(classname, "weapon_shotgun_spas")
+		|| isHaveItem(classname, "weapon_pumpshotgun")
+		|| isHaveItem(classname, "weapon_autoshotgun")) {
+			g_bAllowAutoaim[client] = false;
+	}else{
+		g_bAllowAutoaim[client] = true;
+	}
+	return Plugin_Continue;
 }
 
 /****************************************************************************************************/
@@ -418,19 +549,19 @@ public Action OnPlayerRunCmd(int client, int &buttons, int &impulse,
 	float vel[3], float angles[3], int &weapon, int &iSubType, int &iCmdNum, int &iTickCount, int &iSeed)
 {
 	if (g_bEnabled) {
-		if (isNotSurvivorBot(client) && IsPlayerAlive(client)) {
-			if ((buttons & IN_ATTACK) == IN_ATTACK){
-				iSeed = 1;		// No Spread Addition？？？？
-				Action ret = Plugin_Continue;
-				ret = onSBRunCmd(client, buttons, vel, angles);
-				if (c_bIncapacitated_Enabled) ret = onSBRunCmd_Incapacitated(client, buttons, vel, angles);
-
-				return ret;
+		if (!IsFakeClient(client) && IsClientInGame(client) && IsPlayerAlive(client)) {
+			if(g_bAutoAim[client] && g_bAllowAutoaim[client]){
+				if ((buttons & IN_ATTACK) == IN_ATTACK){
+					Action ret = Plugin_Continue;
+					ret = onSBRunCmd(client, buttons, vel, angles);
+					return ret;
+				}
 			}
 		}
 	}
 	return Plugin_Continue;
 }
+
 
 /****************************************************************************************************/
 
@@ -455,14 +586,7 @@ stock Action onSBRunCmd(int client, int &buttons, float vel[3], float angles[3])
 		
 		static char AW_Classname[32];
 		if (weapon > MAXPLAYERS) GetEntityClassname(weapon, AW_Classname, sizeof(AW_Classname)); // Exception reported: Entity -1 (-1) is invalid
-		
-		char main_weapon[32];
-		int slot0 = GetPlayerWeaponSlot(client, 0);
-		if (slot0 > -1) {			
-			GetEntityClassname(slot0, main_weapon, sizeof(main_weapon));
-		}
-		
-		
+	
 		/* -------------------------------------------------------------------------------------------------------------------------------------------------------------- 
 		*********************************
 		*		Action		 *
@@ -510,6 +634,55 @@ stock Action onSBRunCmd(int client, int &buttons, float vel[3], float angles[3])
 			}
 		}
 		
+		int aCap_Survivor = -1;
+		float min_dist_CapSur = 100000.0;
+		float target_pos_CapSur[3];
+		
+		int aCap_Infected = -1;
+		float min_dist_CapInf = 100000.0;
+		float target_pos_CapInf[3];
+		
+		if (c_bHelp_Enabled && !NeedsTeammateHelp_ExceptSmoker(client)) {
+			// Find a Survivor who are pinned
+			for (int x = 1; x <= MaxClients; ++x) {
+				if (isSurvivor(x)
+					&& NeedsTeammateHelp(x)
+					&& (x != client)
+					&& (isVisibleTo(client, x) || isVisibleTo(x, client)))
+				{
+					float dist;
+					
+					GetClientAbsOrigin(x, target_pos_CapSur);
+					dist = GetVectorDistance(self_pos, target_pos_CapSur);
+					if (dist < c_fHelp_Range) {
+						if (dist < min_dist_CapSur) {
+							min_dist_CapSur = dist;
+							aCap_Survivor = x;
+						}
+					}
+				}
+			}
+			
+			// Find a Special Infected who are pinning
+			for (int x = 1; x <= MaxClients; ++x) {
+				if (isInfected(x)
+					&& CappingSuvivor(x)
+					&& (isVisibleTo(client, x) || isVisibleTo(x, client)))
+				{
+					float dist;
+					
+					GetClientAbsOrigin(x, target_pos_CapInf);
+					dist = GetVectorDistance(self_pos, target_pos_CapInf);
+					if (dist < c_fHelp_Range) {
+						if (dist < min_dist_CapInf) {
+							min_dist_CapInf = dist;
+							aCap_Infected = x;
+						}
+					}
+				}
+			}
+		}
+		
 		// Find a Smoker who is tongued self
 		int aCapSmoker = -1;
 		
@@ -538,7 +711,7 @@ stock Action onSBRunCmd(int client, int &buttons, float vel[3], float angles[3])
 			}
 		}
 		
-		// Find a flying Hunter and Jockey
+		// Find a flying Jockey
 		int aHunterJockey = -1;
 		float hunjoc_pos[3];
 		float min_dist_HunJoc = 100000.0;
@@ -550,27 +723,6 @@ stock Action onSBRunCmd(int client, int &buttons, float vel[3], float angles[3])
 					&& !isStagger(x)
 					&& isVisibleTo(client, x))
 				{
-/* 					if (getZombieClass(x) == ZC_HUNTER) {
-						if (c_iBash_HunterChance == 100 || (c_iBash_HunterChance < 100 && g_bShove[client][x])) {
-							float hunterVelocity[3];
-							GetEntDataVector(x, g_Velo, hunterVelocity);
-							if ((GetClientButtons(x) & IN_DUCK) && hunterVelocity[2] != 0.0) {
-								GetClientAbsOrigin(x, hunjoc_pos);
-							
-								float hundist;
-								hundist = GetVectorDistance(self_pos, hunjoc_pos);
-								
-								if (hundist < c_fBash_HunterRange) { // 145.0 best
-									if (hundist < min_dist_HunJoc) {
-										min_dist_HunJoc = hundist;
-										aHunterJockey = x;
-									}
-								}
-							}
-						}
-					}
-*/
-//					else if (getZombieClass(x) == ZC_JOCKEY) {
 					if (getZombieClass(x) == ZC_JOCKEY) {
 						float jockeyVelocity[3];
 						GetEntDataVector(x, g_Velo, jockeyVelocity);
@@ -684,7 +836,6 @@ stock Action onSBRunCmd(int client, int &buttons, float vel[3], float angles[3])
 		*
 		==================================================================================================== */ 
 		if (aHunterJockey > 0) {
-			if (!g_bDanger[client]) g_bDanger[client] = true;
 			
 			float c_pos[3], e_pos[3];
 			float lookat[3];
@@ -709,7 +860,6 @@ stock Action onSBRunCmd(int client, int &buttons, float vel[3], float angles[3])
 		*
 		==================================================================================================== */ 
 		if (aCapSmoker > 0) { // Shoot even if client invisible the smoker
-			if (!g_bDanger[client]) g_bDanger[client] = true;
 			
 			float c_pos[3], e_pos[3];
 			float lookat[3];
@@ -717,10 +867,6 @@ stock Action onSBRunCmd(int client, int &buttons, float vel[3], float angles[3])
 			GetClientAbsOrigin(client, c_pos);
 			GetEntPropVector(aCapSmoker, Prop_Data, "m_vecOrigin", e_pos);
 			e_pos[2] += 5.0;
-
-			// GetClientEyePosition(client, c_pos);
-			// GetClientEyePosition(aCapSmoker, e_pos);
-			// e_pos[2] += -10.0;
 			
 			MakeVectorFromPoints(c_pos, e_pos, lookat);
 			GetVectorAngles(lookat, angles);
@@ -738,10 +884,80 @@ stock Action onSBRunCmd(int client, int &buttons, float vel[3], float angles[3])
 			
 			return Plugin_Changed;
 		}
+		
+		/* ====================================================================================================
+		*
+		*  優先度C : Help | aCap_Infected, aCap_Survivor
+		*
+		==================================================================================================== */ 
+
+		if (aCap_Infected > 0 && aCap_Survivor < 1) {			
+			int zombieClass = getZombieClass(aCap_Infected);
+			
+			float c_pos[3], e_pos[3];
+			float lookat[3];
+			
+			GetClientEyePosition(client, c_pos);
+			
+			if (aCapSmoker > 0) { // Prioritize aCapSmoker
+				GetClientEyePosition(aCapSmoker, e_pos);
+				e_pos[2] += -10.0;
+			} else {
+				GetClientEyePosition(aCap_Infected, e_pos);
+				
+				if (zombieClass == ZC_SMOKER || zombieClass == ZC_CHARGER) e_pos[2] += -9.0;
+				else if (zombieClass == ZC_HUNTER) e_pos[2] += -14.0;
+			}
+			
+			float aimdist = GetVectorDistance(c_pos, e_pos);
+			
+			if (zombieClass == ZC_CHARGER && aimdist < 300.0) e_pos[2] += 10.0;
+			
+			MakeVectorFromPoints(c_pos, e_pos, lookat);
+			GetVectorAngles(lookat, angles);
+			
+			/****************************************************************************************************/
+			
+			if ((!isHaveItem(AW_Classname, "weapon_melee")) || (isHaveItem(AW_Classname, "weapon_melee") && aimdist < 110.0)) {
+				TeleportEntity(client, NULL_VECTOR, angles, NULL_VECTOR);
+
+				buttons |= IN_ATTACK;			
+				return Plugin_Changed;
+			}
+		}
+		else if (aCap_Survivor > 0) { // Pass if the client and target are "visible" to each other. so aCap Smoker doesn't pass
+			
+			float c_pos[3], e_pos[3];
+			float lookat[3];
+			
+			GetClientEyePosition(client, c_pos);
+			GetClientEyePosition(aCap_Survivor, e_pos);
+			
+			if (HasValidEnt(aCap_Survivor, "m_pounceAttacker")) e_pos[2] += 5.0;
+			else if (aCapSmoker > 0) { // 引っ張っているSmoker
+				GetClientEyePosition(aCapSmoker, e_pos);
+				e_pos[2] += -10.0;
+			}
+			
+			float aimdist = GetVectorDistance(c_pos, e_pos);
+			
+			MakeVectorFromPoints(c_pos, e_pos, lookat);
+			GetVectorAngles(lookat, angles);
+			
+			/****************************************************************************************************/
+			
+			if ((!isHaveItem(AW_Classname, "weapon_melee")) || (isHaveItem(AW_Classname, "weapon_melee") && aimdist < 110.0)) {
+				TeleportEntity(client, NULL_VECTOR, angles, NULL_VECTOR);
+				
+				buttons |= IN_ATTACK;
+				return Plugin_Changed;
+			}
+		}
+		
 
 		/* ====================================================================================================
 		*
-		*   優先度C : Tank Rock, Witch
+		*   優先度D : Tank Rock, Witch
 		*
 		==================================================================================================== */ 
 		if (aTankRock > 1 && !HasValidEnt(client, "m_reviveTarget")) {
@@ -788,7 +1004,7 @@ stock Action onSBRunCmd(int client, int &buttons, float vel[3], float angles[3])
 		
 		/* ====================================================================================================
 		*
-		*   優先度D : Common Infected
+		*   優先度E : Common Infected
 		*
 		==================================================================================================== */ 
 		if (aCommonInfected > 0) {
@@ -805,9 +1021,7 @@ stock Action onSBRunCmd(int client, int &buttons, float vel[3], float angles[3])
 					
 					GetClientEyePosition(client, c_pos);
 					GetEntPropVector(aCommonInfected, Prop_Data, "m_vecOrigin", common_e_pos);
-					
-					//float height_difference = (c_pos[2] - common_e_pos[2]) - 60.0;
-					
+						
 					common_e_pos[2] += 40.0;
 					
 					float aimdist = GetVectorDistance(c_pos, common_e_pos);
@@ -854,7 +1068,7 @@ stock Action onSBRunCmd(int client, int &buttons, float vel[3], float angles[3])
 		
 		/* ====================================================================================================
 		*
-		*   優先度E : Special Infected and Tank (new_target)
+		*   優先度F : Special Infected and Tank (new_target)
 		*
 		==================================================================================================== */ 
 		if (new_target > 0) {
@@ -874,9 +1088,6 @@ stock Action onSBRunCmd(int client, int &buttons, float vel[3], float angles[3])
 					&& (GetClientButtons(new_target) & IN_DUCK)) {
 					if (GetVectorDistance(c_pos, e_pos) > 250.0) e_pos[2] += -30.0;
 					else e_pos[2] += -35.0;
-//				} else if(zombieClass == ZC_HUNTER
-//					&& (!(GetEntityFlags(new_target) & FL_ONGROUND))) {
-//					e_pos[2] += -100;
 				} else if (zombieClass == ZC_JOCKEY) {
 					e_pos[2] += -30.0;
 				} else {
@@ -903,32 +1114,9 @@ stock Action onSBRunCmd(int client, int &buttons, float vel[3], float angles[3])
 			}
 			
 			/****************************************************************************************************/
-			
-			bool isTargetBoomer = false; // Is new_target Boomer
-			bool isBoomer_Shoot_OK = false;
-			
-			if (c_bSI_IgnoreBoomer && zombieClass == ZC_BOOMER) {
-				float voS_pos[3];
-				for (int s = 1; s <= MaxClients; ++s) {
-					if (isSurvivor(s)
-						&& IsPlayerAlive(s))
-					{
-						float fVomit = GetEntPropFloat(s, Prop_Send, "m_vomitStart");
-						if (GetGameTime() - fVomit > 10.0) { // Survivors without vomit
-							GetClientAbsOrigin(s, voS_pos);
-							
-							float dist = GetVectorDistance(voS_pos, e_pos); // Distance between the Survivor without vomit and the Boomer
-							if (dist >= c_fSI_IgnoreBoomerRange) { isBoomer_Shoot_OK = true; } // If the survivor without vomit is farther than dist "c_fSI_IgnoreBoomerRange (def: 200)"
-							else { isBoomer_Shoot_OK = false; break; } // If False appears even once, break
-						}
-					}
-				}
-				isTargetBoomer = true;
-			}
-			
+
 			if ((zombieClass == ZC_JOCKEY && g_bShove[client][new_target])
 				|| zombieClass == ZC_SMOKER
-				|| (isTargetBoomer && !isBoomer_Shoot_OK))
 			{
 				if (aimdist < 90.0 && !isStagger(new_target)) {
 					TeleportEntity(client, NULL_VECTOR, angles, NULL_VECTOR);
@@ -941,7 +1129,7 @@ stock Action onSBRunCmd(int client, int &buttons, float vel[3], float angles[3])
 			if (!isHaveItem(AW_Classname, "weapon_melee")
 				|| (aimdist < 100.0 && isHaveItem(AW_Classname, "weapon_melee")))
 			{			
-				if (!isTargetBoomer || (isTargetBoomer && isBoomer_Shoot_OK)) {
+				if ((g_bLagShoot) && (zombieClass == ZC_HUNTER || zombieClass == ZC_JOCKEY)){
 					DataPack data;
 					CreateDataTimer(lagTime[client], Timer_LagShoot, data);
 					data.WriteFloat(e_pos[0]);
@@ -950,14 +1138,14 @@ stock Action onSBRunCmd(int client, int &buttons, float vel[3], float angles[3])
 					data.WriteCell(client);
 					data.WriteCell(buttons);
 					data.Reset();
+				}else{
+					TeleportEntity(client, NULL_VECTOR, angles, NULL_VECTOR);
+					buttons |= IN_ATTACK;
 				}
 				
 				return Plugin_Changed;
 			}
 		}
-		
-		// if there is no danger, false
-		if (g_bDanger[client]) g_bDanger[client] = false;
 	}
 	
 	return Plugin_Continue;
@@ -981,170 +1169,6 @@ public Action Timer_LagShoot(Handle timer, Handle data)
 	
 	buttons |= IN_ATTACK;
 }
-
-
-/* ================================================================================================
-*=
-*= 		Incapacitated Run Cmd
-*=
-================================================================================================ */
-stock Action onSBRunCmd_Incapacitated(int client, int &buttons, float vel[3], float angles[3])
-{
-	if (isIncapacitated(client)) {
-		int aCapper = -1;
-		float min_dist_Cap = 100000.0;
-		float self_pos[3], target_pos[3];
-		
-		GetClientEyePosition(client, self_pos);
-		if (!NeedsTeammateHelp(client)) {
-			for (int x = 1; x <= MaxClients; ++x) {
-				// 拘束されている生存者を探す
-				if (isSurvivor(x)
-					&& NeedsTeammateHelp(x)
-					&& (x != client)
-					&& (isVisibleTo(client, x) || isVisibleTo(x, client)))
-				{
-					GetClientAbsOrigin(x, target_pos);
-					float dist = GetVectorDistance(self_pos, target_pos);
-					if (dist < min_dist_Cap) {
-						min_dist_Cap = dist;
-						aCapper = x;
-					}
-				}
-				
-				// 拘束している特殊感染者を探す
-				if (isInfected(x)
-					&& CappingSuvivor(x)
-					&& (isVisibleTo(client, x) || isVisibleTo(x, client)))
-				{
-					GetClientAbsOrigin(x, target_pos);
-					float dist = GetVectorDistance(self_pos, target_pos);
-					if (dist < min_dist_Cap) {
-						min_dist_Cap = dist;
-						aCapper = x;
-					}
-				}
-			}
-		}
-		
-		if (aCapper > 0) {
-			float c_pos[3], e_pos[3];
-			float lookat[3];
-			
-			GetClientEyePosition(client, c_pos);
-			GetClientEyePosition(aCapper, e_pos);
-			
-			e_pos[2] += -15.0;		
-			
-			if ((isSurvivor(aCapper) && HasValidEnt(aCapper, "m_pounceAttacker"))) {
-				e_pos[2] += 18.0;
-				// Raise angles if near
-			}
-			if ((isInfected(aCapper) && getZombieClass(aCapper) == ZC_HUNTER)) {
-				e_pos[2] += -15.0;
-			}
-			
-			MakeVectorFromPoints(c_pos, e_pos, lookat);
-			GetVectorAngles(lookat, angles);
-
-			TeleportEntity(client, NULL_VECTOR, angles, NULL_VECTOR);
-
-			buttons |= IN_ATTACK;
-			
-			return Plugin_Changed;
-		}
-		
-		
-		int new_target = -1;
-		int aCommonInfected = -1;
-		if (aCapper < 1 && !NeedsTeammateHelp(client)) {
-			float min_dist = 100000.0;
-			float ci_pos[3];
-			
-			for (int x = 1; x <= MaxClients; ++x){
-				if (isInfected(x)
-					&& IsPlayerAlive(x)
-					&& (isVisibleTo(client, x) || isVisibleTo(x, client)))
-				{
-					GetClientAbsOrigin(x, target_pos);
-					float dist = GetVectorDistance(self_pos, target_pos);
-					if (dist < min_dist) {
-						min_dist = dist;
-						new_target = x;
-						aCommonInfected = -1;
-					}
-				}
-			}
-			
-			if (c_bCI_Enabled) {
-				for (int iEntity = MaxClients+1; iEntity <= MAXENTITIES; ++iEntity) {
-					if (IsCommonInfected(iEntity)
-						&& GetEntProp(iEntity, Prop_Data, "m_iHealth") > 0
-						&& isVisibleToEntity(iEntity, client))
-					{
-						GetEntPropVector(iEntity, Prop_Data, "m_vecAbsOrigin", ci_pos);
-						float dist = GetVectorDistance(self_pos, ci_pos);
-						
-						if (dist < min_dist) {
-							min_dist = dist;
-							aCommonInfected = iEntity;
-							new_target = -1;
-						}
-					}
-				}
-			}
-		}
-		
-		if (aCommonInfected > 0) {
-			float c_pos[3], common_e_pos[3];
-			float lookat[3];
-			
-			GetClientEyePosition(client, c_pos);
-			GetEntPropVector(aCommonInfected, Prop_Data, "m_vecOrigin", common_e_pos);
-			common_e_pos[2] += 35.0;
-			
-			MakeVectorFromPoints(c_pos, common_e_pos, lookat);
-			GetVectorAngles(lookat, angles);
-						
-			/****************************************************************************************************/
-						
-			TeleportEntity(client, NULL_VECTOR, angles, NULL_VECTOR);
-			
-			buttons |= IN_ATTACK;
-			
-			return Plugin_Changed;
-		}
-		
-		if (new_target > 0) {
-			float c_pos[3], e_pos[3];
-			float lookat[3];
-			
-			GetClientEyePosition(client, c_pos);
-			GetClientEyePosition(new_target, e_pos);
-			
-			e_pos[2] += -15.0;
-			
-			int zombieClass = getZombieClass(new_target);
-			if (zombieClass == ZC_JOCKEY) {
-				e_pos[2] += -30.0;
-			} else if (zombieClass == ZC_HUNTER) {
-				if ((GetClientButtons(new_target) & IN_DUCK) || HasValidEnt(new_target, "m_pounceVictim")) e_pos[2] += -25.0;
-			}
-			
-			MakeVectorFromPoints(c_pos, e_pos, lookat);
-			GetVectorAngles(lookat, angles);
-
-			TeleportEntity(client, NULL_VECTOR, angles, NULL_VECTOR);
-			
-			buttons |= IN_ATTACK;
-			
-			return Plugin_Changed;
-		}
-	}
-	
-	return Plugin_Continue;
-}
-
 
 /* ================================================================================================
 *=
@@ -1567,13 +1591,7 @@ bool IsValidEntityIndex(int entity)
     return (MaxClients+1 <= entity <= GetMaxEntities());
 }
 
-public float Clamp(float value, float valueMin, float valueMax)
+float Clamp(float inc, float low, float high)
 {
-    if (value < valueMin) {
-        return valueMin;
-    } else if (value > valueMax) {
-        return valueMax;
-    } else {
-        return value;
-    }
+	return (inc > high) ? high : ((inc < low) ? low : inc);
 }
