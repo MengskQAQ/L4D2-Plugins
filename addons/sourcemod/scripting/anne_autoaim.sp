@@ -11,7 +11,7 @@ public Plugin myinfo =
 	name = "L4D2 Survivor Auto aim",
 	author = "DingbatFlat, HarryPotter, Mengsk",
 	description = "Improve Survivor",
-	version = "1.2",
+	version = "1.31",
 	url = "https://github.com/MengskQAQ/L4D2-Plugins"
 }
 
@@ -37,6 +37,12 @@ And the action during incapacitated.
 // ====================================================================================================
 
 Change Log:
+1.31 (19-Aug-2022)
+    - try to reduce the press to server.
+    - add code about new-connect players.
+1.3  (19-Aug-2022)
+    - more violent,simply,and without beauty.
+    - delete useless code.
 1.2  (10-May-2022)
     - delete useless code.
     - try to rebuild the code.
@@ -45,7 +51,6 @@ Change Log:
     - delete useless code.
     - try to fix the problem because of the lag between client and server.
     - fix the timer lag when plugins disable.
-
 1.00 (09-September-2021)
     - Initial release.
 
@@ -260,6 +265,8 @@ public void OnPluginStart()
 	HookEvent("witch_harasser_set", Event_WitchRage);
 	HookEvent("player_hurt", Event_HeadShotChange, EventHookMode_Pre);
 	
+	HookEvent("witch_harasser_set", Event_WitchRage);
+	
 	g_Velo = FindSendPropInfo("CBasePlayer", "m_vecVelocity[0]");
 	
 	RegConsoleCmd("sm_autoaim", cmdAutoaim, "allow client to enable autoaim");
@@ -346,7 +353,9 @@ void inputConfig()
 	
 	c_bPrioritize_OwnerSmoker = GetConVarBool(sb_fix_prioritize_ownersmoker);
 	
+	LerpRecord();
 	LagRecord();
+	StateHelper();
 	
 	//Notes: I write it because I want to change spread in autoaim-mode, and that command is connect to another plugin.
 	ServerCommand("sm_info_reload");
@@ -364,20 +373,37 @@ void inputConfig()
 
 public Action L4D_OnFirstSurvivorLeftSafeArea(int client)
 {	
+	CreateTimer(0.1, Timer_GameStart, TIMER_FLAG_NO_MAPCHANGE);
+	return Plugin_Continue;
+}
+
+public Action Timer_GameStart(Handle Timer)
+{
 	if(g_bEnabled){
 		CPrintToChatAll("{blue}[{default}Auto Aim{blue}]{default} Plugin State:{olive} Running{default}");
 		CPrintToChatAll("{blue}[{default}Auto Aim{blue}]{default} Disable Weapon:{olive} Shotgun{default}");
+		CPrintToChatAll("{blue}[{default}Auto Aim{blue}]{default} Please response if you have any bugs");
 	}
-	LagRecord();
 	LerpRecord();
-	
-	return Plugin_Continue;
+	LagRecord();
 }
 
 void Anounnce(int client){
 	if(g_bEnabled && !isNotSurvivorBot(client)){
 		CPrintToChat(client, "{blue}[{default}Auto Aim{blue}]{default} Plugin State:{olive} Running{default}");
 		CPrintToChat(client, "{blue}[{default}Auto Aim{blue}]{default} Disable Weapon:{olive} Shotgun{default}");
+		CPrintToChat(client, "{blue}[{default}Auto Aim{blue}]{default} Don't be nervous if someone seems a cheater");
+	}
+}
+
+void StateHelper(){
+	if(g_bEnabled){
+		for (int client = 1; client <= MaxClients; client++) {	
+			if(isNotSurvivorBot(client) && IsPlayerAlive(client)){
+				CPrintToChat(client, "{blue}[{default}Auto Aim{blue}]{default} Plugin State:{olive} Running{default}");
+				CPrintToChat(client, "{blue}[{default}Auto Aim{blue}]{default} Type {olive}!autoaim{default} in chat to toggle Your State");
+			}
+		}
 	}
 }
 
@@ -832,7 +858,7 @@ stock Action onSBRunCmd(int client, int &buttons, float vel[3], float angles[3])
 		
 		/* ====================================================================================================
 		*
-		*   優先度A : Bash | flying Hunter, Jockey
+		*   優先度A : Bash | flying Jockey
 		*
 		==================================================================================================== */ 
 		if (aHunterJockey > 0) {
@@ -1275,42 +1301,6 @@ public void OnEntityDestroyed(int entity)
 	}
 }
 
-
-/* ================================================================================================
-*=
-*=		Stock any
-*=
-================================================================================================ */
-stock void ScriptCommand(int client, const char[] command, const char[] arguments, any ...)
-{
-	char vscript[PLATFORM_MAX_PATH];
-	VFormat(vscript, sizeof(vscript), arguments, 4);
-	
-	int flags = GetCommandFlags(command);
-	SetCommandFlags(command, flags & ~FCVAR_CHEAT);
-	FakeClientCommand(client, "%s %s", command, vscript);
-	SetCommandFlags(command, flags)
-}
-
-stock void L4D2_RunScript(const char[] sCode, any ...)
-{
-	static iScriptLogic = INVALID_ENT_REFERENCE;
-	if(iScriptLogic == INVALID_ENT_REFERENCE || !IsValidEntity(iScriptLogic)) {
-		iScriptLogic = EntIndexToEntRef(CreateEntityByName("logic_script"));
-		if(iScriptLogic == INVALID_ENT_REFERENCE || !IsValidEntity(iScriptLogic))
-			SetFailState("Could not create 'logic_script'");
-		
-		DispatchSpawn(iScriptLogic);
-	}
-	
-	static String:sBuffer[512];
-	VFormat(sBuffer, sizeof(sBuffer), sCode, 2);
-	
-	SetVariantString(sBuffer);
-	AcceptEntityInput(iScriptLogic, "RunScriptCode");
-}
-
-
 /*
 *
 *   Bool
@@ -1417,11 +1407,6 @@ stock bool isSpecialInfectedBot(int i)
 	return i > 0 && i <= MaxClients && IsClientInGame(i) && IsFakeClient(i) && GetClientTeam(i) == 3;
 }
 
-/* bool isSurvivorBot(int i)
-{
-	return isSurvivor(i) && IsFakeClient(i);
-} */
-
 bool isNotSurvivorBot(int i)
 {
 	return isSurvivor(i) && !IsFakeClient(i);
@@ -1446,15 +1431,6 @@ bool isIncapacitated(int client)
 {
 	return GetEntProp(client, Prop_Send, "m_isIncapacitated", 1) == 1;
 }
-
-/* bool isReloading(int client)
-{
-	int slot0 = GetPlayerWeaponSlot(client, 0);
-	if (slot0 > -1) {
-		return GetEntProp(slot0, Prop_Data, "m_bInReload") > 0;
-	}
-	return false;
-} */
 
 bool isStagger(int client) // Client Only
 {
