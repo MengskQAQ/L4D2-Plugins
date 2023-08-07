@@ -1,0 +1,19 @@
+"DingShotSounds"
+{
+	"ui/littlereward.wav"
+	{
+		"name"	"Ding"
+	}
+	"level/bell_normal.wav"
+	{
+		"name"	"Dang"
+	}
+	"level/scoreregular.wav"
+	{
+		"name"	"Ding~~~"
+	}
+	"level/puck_fail.wav"
+	{
+		"name"	"Du"
+	}
+}
