@@ -8,6 +8,10 @@
 
 ========================================================================================
 	Change Log:
+1.4.1 (21-March-2025)
+	- 优化代码部分逻辑
+1.4 (12-March-2025)
+	- 修复开启 AFKCHECK 时的编译错误
 1.3.1 (7-Oct-2023)
 	- 修复菜单不能正确显示状态的bug
 1.3 (7-Oct-2023)
@@ -49,9 +53,9 @@ enum
 }
 
 // Cvar Handles/Variables
-static int iEntRef[MAXPLAYERS+1];
+static int iEntRef[MAXPLAYERS+1] = {INVALID_ENT_REFERENCE, ...};
 static int iEntOwner[2048+1];
-static int g_iEntityState[MAXPLAYERS+1];
+static bool g_bEntityState[MAXPLAYERS+1];
 static int IMPULSE_FLASHLIGHT = 100;
 
 #if AFKCHECK
@@ -83,7 +87,7 @@ public Plugin myinfo =
 	name = "[L4D2] Look At Weapon Yourself",
 	author = "Mengsk",
 	description = "让你可以主动检视武器",
-	version = "1.3.1",
+	version = "1.4.1",
 	url = "https://space.bilibili.com/24447721"
 }
 
@@ -105,7 +109,7 @@ public void OnPluginStart()
 	g_hCvarDist 		= CreateConVar("l4d2_lookatweapon_distance", "30", "Distance the entity forward player.");
 	g_hCvarWay 			= CreateConVar("l4d2_lookatweapon_way", "2", "Bitwise: 0=no way, 1=double SHIFT, 2=chat command, 4=double F, 8=double R when full ammo");
 	g_hCvarShiftCount 	= CreateConVar("l4d2_lookatweapon_way_multishift", "2", "How much time SHIFT need hit to switch, should greater than 2, 0=close");
-	g_hCvarSensitive 	= CreateConVar("l4d2_lookatweapon_way_sensitive", "1", "0=No sensitive, 1=ONLY ONE touch can disable lookatweapon state.");
+	g_hCvarSensitive 	= CreateConVar("l4d2_lookatweapon_way_sensitive", "0", "0=No sensitive, 1=ONLY ONE touch can disable lookatweapon state.");
 	g_hCvarMenu 		= CreateConVar("l4d2_lookatweapon_menu", "1", "0=Menu disalbe, 1=Menu enable.");
 
 
@@ -118,12 +122,12 @@ public void OnPluginStart()
 	g_hCvarSensitive.AddChangeHook(ConVarChanged_Cvars);
 
 #if AFKCHECK
-	g_hCvarAfk = CreateConVar("l4d2_lookatweapon_afk", "1", "0=Afk check disalbe, 1=Afk check enable.(AVAILABLE ONLY WHEN AFKCHECK COMPILED)");
+	g_hCvarAfk = CreateConVar("l4d2_lookatweapon_afk", "0", "0=Afk check disalbe, 1=Afk check enable.(AVAILABLE ONLY WHEN AFKCHECK COMPILED)");
 	g_hCvarAfk.AddChangeHook(ConVarChanged_Cvars);
 #endif
 
   	// 生成cfg文件
-	// AutoExecConfig(true, "l4d2_lookatweapon");
+	AutoExecConfig(true, "l4d2_lookatweapon");
 
 	HookEvent("player_death", Event_PlayerDeath, EventHookMode_Pre);
 	HookEvent("player_team", Event_TeamChange, EventHookMode_Post);
@@ -181,6 +185,7 @@ public void OnClientDisconnect(int client)
 {
 	SDKUnhook(client, SDKHook_WeaponCanUse, Hook_WeaponCanUse);
 	SDKUnhook(client, SDKHook_WeaponSwitch, Hook_WeaponSwitch);
+	DeleteFakeEntity(client);
 }
 // ====================================================================================================
 //					CVARS
@@ -247,7 +252,7 @@ void IsAllowed()
 
 public Action Hook_WeaponCanUse(int client, int weapon)
 {
-	if(!g_bCvarAllow || GetClientTeam(client) != 2 || !IsValidEntRef(weapon))	return Plugin_Continue;
+	if(!g_bCvarAllow || GetClientTeam(client) != 2 || !IsValidEntity(weapon))	return Plugin_Continue;
 	for (int i = 1; i <= MaxClients; i++) {
 		if(IsValidEntRef(iEntRef[i]) && (EntRefToEntIndex(weapon) == EntRefToEntIndex(iEntRef[i])))
 			return Plugin_Handled;
@@ -257,7 +262,7 @@ public Action Hook_WeaponCanUse(int client, int weapon)
 
 public Action Hook_WeaponSwitch(int client, int weapon)
 {
-	if(!g_bCvarAllow || !g_iCvarMenu || GetClientTeam(client) != 2 || !IsValidEntRef(weapon) || IsFakeClient(client))	return Plugin_Continue;
+	if(!g_bCvarAllow || !g_iCvarMenu || GetClientTeam(client) != 2 || !IsValidEntity(weapon) || IsFakeClient(client))	return Plugin_Continue;
 
 	char classname[32];
 	int weaponid = GetEntPropEnt(client, Prop_Send, "m_hActiveWeapon");
@@ -292,7 +297,7 @@ public Action cmdLookAtWeaponMenu(int client, int args)
 
 	Menu menu = new Menu(iLookAtWeaponMenuHandler);
 	menu.SetTitle(classname);
-	FormatEx(status, sizeof(status), "当前检视状态：%s", g_iEntityState[client] == 1 ? "☑" : "☐");
+	FormatEx(status, sizeof(status), "当前检视状态：%s", g_bEntityState[client] ? "☑" : "☐");
 	menu.AddItem("w", status);
 	menu.AddItem("q", "上次选择");
 	for (int i = 1; i <= 35; i++) {
@@ -434,6 +439,7 @@ public void Event_RoundStart(Handle hEvent, const char[] sEventName, bool bDontB
 public void Event_Interrupt(Handle event, const char[] name, bool dontBroadcast)
 {
 	int client = GetClientOfUserId(GetEventInt(event, name));
+
 	if(g_bCvarAllow)
 		DeleteFakeEntity(client);
 }
@@ -442,6 +448,7 @@ public void Event_PlayerBotReplace(Handle event, const char[] name, bool dontBro
 {
 	int client = GetClientOfUserId(GetEventInt(event, "player"));
 	int bot = GetClientOfUserId(GetEventInt(event, "bot"));
+
 	if(g_bCvarAllow){
 		DeleteFakeEntity(client);
 		DeleteFakeEntity(bot);
@@ -456,7 +463,7 @@ public Action OnPlayerRunCmd(int client, int& buttons, int& impulse, float vel[3
 {
 	if( g_bCvarAllow && IsClientInGame(client) && !IsFakeClient(client))
 	{
-		int entity = iEntRef[client];
+		int ref = iEntRef[client];
 
 #if AFKCHECK
 		static int iLastMouse[MAXPLAYERS+1][2];
@@ -496,17 +503,19 @@ public Action OnPlayerRunCmd(int client, int& buttons, int& impulse, float vel[3
 
 		if(g_bCvarSensitive)
 		{
-			if((g_iEntityState[client] == 1) && (buttons & (IN_FORWARD | IN_BACK | IN_LEFT | IN_RIGHT | IN_JUMP | IN_DUCK)))
+			if(g_bEntityState[client] && (buttons & (IN_FORWARD | IN_BACK | IN_LEFT | IN_RIGHT | IN_JUMP | IN_DUCK)))
 			{
 				if(Sensitive_Timer[client] == INVALID_HANDLE)
 				{
 					Sensitive_Timer[client] = CreateTimer(SENSITIVE_DURATION, Timer_Sensitive, client);
 				}
+
 				if(g_bSensitiveDelet[client])
 				{
 					g_bSensitiveDelet[client] = false;
 					DeleteFakeEntity(client);
 				}
+
 				return Plugin_Continue;
 			}
 		}
@@ -561,8 +570,8 @@ public Action OnPlayerRunCmd(int client, int& buttons, int& impulse, float vel[3
 			}
 		}
 
-		if(IsValidEntRef(entity)){
-			TeleportDynamicLight(client, entity);
+		if(IsValidEntRef(ref)){
+			TeleportDynamicLight(client, EntRefToEntIndex(ref));
 		}
 	}
 
@@ -571,20 +580,22 @@ public Action OnPlayerRunCmd(int client, int& buttons, int& impulse, float vel[3
 
 void DeleteFakeEntity(int client)
 {
-	g_iEntityState[client] = 0;	// 泄露就泄露吧
+	g_bEntityState[client] = false;	// 泄露就泄露吧
+
 	if(IsValidEntRef(iEntRef[client]))
 	{
 		DisplayHint(client, false);
 		AcceptEntityInput(EntRefToEntIndex(iEntRef[client]), "kill");
-		iEntRef[client] = -1;
 	}
+
+	iEntRef[client] = INVALID_ENT_REFERENCE;
 }
 
 void CreatFakeEntity(int client)
 {
 	// if(IsLimited(client)) return; // 非安全状态下无法开启检视，避免未知bug
 
-	g_iEntityState[client] = 1;
+	g_bEntityState[client] = true;
 
 	int iEntity;
 
@@ -642,6 +653,9 @@ public bool ShouldCollide(int entity, int collisiongroup, int contentsmask, bool
 
 void TeleportDynamicLight(int client, int entity)
 {
+	if (!IsValidEntity(entity))
+		return;
+	
 	float vLoc[3], vPos[3], vAng[3];
 
 	GetClientEyeAngles(client, vAng);
@@ -669,6 +683,7 @@ void TeleportDynamicLight(int client, int entity)
 			TeleportEntity(entity, vPos, NULL_VECTOR, NULL_VECTOR);
 		}
 	}
+
 	delete trace;
 }
 
@@ -712,21 +727,22 @@ public void StoreMaxClip1(int entity)
 public void SHIFTClickCount(int client)
 {
 	g_iSHIFTClickCount[client]++;   // 计数+1
+
 	if(g_iSHIFTClickCount[client] >= g_iCvarShiftCount)  // 计数达到预设值
 	{
 		SwitchEntityState(client);
 		g_iSHIFTClickCount[client] = 0;
 	}
+
 	ShutdownTimer(SHIFTClear_Timer[client]);
 	SHIFTClear_Timer[client] = CreateTimer(1.0, Timer_SHIFTClear, client);
 }
 
 void SwitchEntityState(int client)
 {
-	if(g_iEntityState[client] == 1){
-		
+	if(g_bEntityState[client]){
 		DeleteFakeEntity(client);
-	}else{
+	} else {
 		CreatFakeEntity(client);
 
 		if(g_bCvarSensitive)
@@ -753,10 +769,9 @@ int GetOriginalSequence(int client)
 	return g_iLastSequence[client];
 }
 
-static bool IsValidEntRef(int iEnt)
+static bool IsValidEntRef(int iRef)
 {
-	return (iEnt != 0 && EntRefToEntIndex(iEnt) != INVALID_ENT_REFERENCE);
-   // INVALID_ENT_REFERENCE = -1
+	return (iRef != INVALID_ENT_REFERENCE && EntRefToEntIndex(iRef) != -1);
 }
 
 public bool TraceFilter(int entity, int contentsMask, any client)
@@ -789,6 +804,7 @@ void ShutdownTimer(Handle& timer)
 	}
 }
 
+/*
 bool IsLimited(int client)
 {
 	return (GetEntPropEnt(client, Prop_Send, "m_tongueVictim") > 0) // Smoker
@@ -800,6 +816,7 @@ bool IsLimited(int client)
 		|| (GetEntityMoveType(client) == MOVETYPE_LADDER) // 爬梯
 		|| (GetEntProp(client, Prop_Send, "m_isIncapacitated", 1) == 1); // 倒地
 }
+*/
 
 #if AFKCHECK
 	public void AllClientInitAFKTimer()
@@ -835,19 +852,19 @@ bool IsLimited(int client)
 			KillTimer(AFK_Timer[client]);
 			AFK_Timer[client] = INVALID_HANDLE;
 		}
+
 		DeleteFakeEntity(client);
 	}
 
 	public Action Timer_AFK(Handle Timer, int client)
 	{
-		if (IsPlayerAfk(client))
-		{
-			if (g_iEntityState[client] == 0)
+		if (IsPlayerAfk(client)) {
+			if (!g_bEntityState[client])
 			{
 				CreatFakeEntity(client);
 			}
-		}else if(!g_bCvarSensitive){	// 仅当另一个检测没有生效时，才会退出检视
-			if (g_iEntityState[client] == 1)
+		} else if (!g_bCvarSensitive) {	// 仅当另一个检测没有生效时，才会退出检视
+			if (g_bEntityState[client])
 			{
 				DeleteFakeEntity(client);
 			}
